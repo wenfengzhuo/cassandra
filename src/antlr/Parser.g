@@ -243,6 +243,7 @@ cqlStatement returns [ParsedStatement stmt]
     | st38=createMaterializedViewStatement { $stmt = st38; }
     | st39=dropMaterializedViewStatement   { $stmt = st39; }
     | st40=alterMaterializedViewStatement  { $stmt = st40; }
+    | st41=selectTimestampStatement        { $stmt = st41; }
     ;
 
 /*
@@ -285,6 +286,23 @@ selectStatement returns [SelectStatement.RawStatement expr]
                                                                              isJson);
           WhereClause where = wclause == null ? WhereClause.empty() : wclause.build();
           $expr = new SelectStatement.RawStatement(cf, params, $sclause.selectors, where, limit, perPartitionLimit);
+      }
+    ;
+
+/**
+ * SELECT MAX TIMESTAMP
+ * <CF> (<value>, <value>...)
+ */
+selectTimestampStatement returns [SelectTimestampStatement.RawStatement expr]
+    @init {
+        List<Term.Raw> values = new ArrayList<>();
+    }
+    : K_SELECT
+      K_MAX
+      K_TIMESTAMP cf=columnFamilyName
+      '(' v1=term { values.add(v1); } ( ',' vn=term { values.add(vn); } )* ')'
+      {
+          $expr = new SelectTimestampStatement.RawStatement(cf, values);
       }
     ;
 
@@ -1808,5 +1826,6 @@ basic_unreserved_keyword returns [String str]
         | K_PER
         | K_PARTITION
         | K_GROUP
+        | K_MAX
         ) { $str = $k.text; }
     ;
