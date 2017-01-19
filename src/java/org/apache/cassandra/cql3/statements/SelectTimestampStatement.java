@@ -85,6 +85,10 @@ import org.apache.cassandra.utils.FBUtilities;
 import static org.apache.cassandra.cql3.statements.RequestValidations.checkTrue;
 
 /**
+ * Statement that represents the query of the max timestamp of all rows under a partition key.
+ *
+ * The statement will have the following format:
+ * "SELECT MAX TIMESTAMP <Table Name>(<part one of partition key>, <part two of partition key>, ...)"
  *
  * @author Wenfeng Zhuo (wz2366@columbia.edu)
  * @createAt 01-18-2017
@@ -101,6 +105,7 @@ public class SelectTimestampStatement implements CQLStatement
 
     public StatementRestrictions restrictions;
 
+    // The column "timestamp" for query result
     private List<ColumnSpecification> columns;
 
     public SelectTimestampStatement(CFMetaData cfm, int boundTerms, StatementRestrictions restrictions) {
@@ -264,7 +269,7 @@ public class SelectTimestampStatement implements CQLStatement
             WhereClause.Builder whereClause = new WhereClause.Builder();
 
             List<ColumnDefinition> partitionKeys = cfm.partitionKeyColumns();
-            checkTrue(partitionKeys.size() == values.size(), "The number of values for partition keys does not match the table definition");
+            checkTrue(partitionKeys.size() == values.size(), "The number of values for partition key does not match the table definition");
 
             for (int i = 0; i < values.size(); i ++) {
                 whereClause.add(
