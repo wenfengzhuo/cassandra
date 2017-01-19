@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,11 +47,18 @@ import org.apache.cassandra.cql3.WhereClause;
 import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.cql3.restrictions.StatementRestrictions;
 import org.apache.cassandra.cql3.selection.Selection;
+import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.DataRange;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.LivenessInfo;
 import org.apache.cassandra.db.PartitionColumns;
+import org.apache.cassandra.db.PartitionPosition;
+import org.apache.cassandra.db.PartitionRangeReadCommand;
 import org.apache.cassandra.db.ReadExecutionController;
 import org.apache.cassandra.db.ReadQuery;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
+import org.apache.cassandra.db.Slices;
 import org.apache.cassandra.db.filter.ClusteringIndexFilter;
 import org.apache.cassandra.db.filter.ClusteringIndexNamesFilter;
 import org.apache.cassandra.db.filter.ClusteringIndexSliceFilter;
@@ -62,10 +70,12 @@ import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.RowIterator;
 import org.apache.cassandra.db.view.View;
+import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.exceptions.RequestExecutionException;
 import org.apache.cassandra.exceptions.RequestValidationException;
 import org.apache.cassandra.exceptions.UnauthorizedException;
+import org.apache.cassandra.index.SecondaryIndexManager;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.transport.messages.ResultMessage;
@@ -155,27 +165,17 @@ public class SelectTimestampStatement implements CQLStatement
      * @return
      */
     private ReadQuery getReadQuery(QueryOptions options) {
-        Collection<ByteBuffer> keys = restrictions.getPartitionKeys(options);
-        List<SinglePartitionReadCommand> commands = new ArrayList<>();
+        AbstractBounds<PartitionPosition> keyBounds = restrictions.getPartitionKeyBounds(options);
+        ClusteringIndexFilter clusteringIndexFilter = new ClusteringIndexSliceFilter(Slices.ALL, false);
 
-        for (ByteBuffer key : keys) {
-
-            QueryProcessor.validateKey(key);
-            DecoratedKey decoratedKey = cfm.decorateKey(ByteBufferUtil.clone(key));
-
-            ClusteringIndexFilter clusteringIndexFilter = new ClusteringIndexNamesFilter(restrictions.getClusteringColumns(options), false);
-
-            // No columns will be selected since we only care the livenessinfo of the primary key of rows
-            ColumnFilter columnFilter = ColumnFilter.selectionBuilder().build();
-
-            commands.add(SinglePartitionReadCommand.create(cfm,
-                                                           FBUtilities.nowInSeconds(),
-                                                           decoratedKey,
-                                                           ColumnFilter.selectionBuilder().build(),
-                                                           clusteringIndexFilter));
-        }
-        ReadQuery readQuery = new SinglePartitionReadCommand.Group(commands, DataLimits.NONE);
-        return readQuery;
+        PartitionRangeReadCommand command = new PartitionRangeReadCommand(cfm,
+                                                                          FBUtilities.nowInSeconds(),
+                                                                          ColumnFilter.selectionBuilder().build(),
+                                                                          RowFilter.NONE,
+                                                                          DataLimits.NONE,
+                                                                          new DataRange(keyBounds, clusteringIndexFilter),
+                                                                          Optional.empty());
+        return command;
     }
 
     /**
@@ -221,7 +221,8 @@ public class SelectTimestampStatement implements CQLStatement
             while (rows.hasNext()) {
                 hasRow = true;
                 Row row = rows.next();
-                maxTimestamp = Math.max(maxTimestamp, row.primaryKeyLivenessInfo().timestamp());
+                LivenessInfo livenessInfo = row.primaryKeyLivenessInfo();
+                maxTimestamp = Math.max(maxTimestamp, livenessInfo.timestamp());
             }
         }
 
