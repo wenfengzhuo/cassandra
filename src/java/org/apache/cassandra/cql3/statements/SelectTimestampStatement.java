@@ -165,7 +165,7 @@ public class SelectTimestampStatement implements CQLStatement
     }
 
     /**
-     * Get ReadQuery from restrictions. The ReadQuery will created as a SinglePartitionReadCommand.
+     * Get ReadQuery from restrictions. The ReadQuery will created as a PartitionRangeReadCommand.
      * @param options
      * @return
      */
